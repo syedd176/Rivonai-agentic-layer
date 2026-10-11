@@ -1,0 +1,72 @@
+# ---- secrets: never commit these ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+credentials.csv
+*_accessKeys.csv
+.aws/
+aws_credentials*
+secrets.json
+service-account*.json
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- node ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# ---- vercel / next ----
+.vercel
+.next/
+out/
+
+# ---- build + generated ----
+dist/
+build/
+*.pdf.tmp
+deck/*.html
+deck/slide-*.jpg
+deck/*.pdf
+
+# ---- os / editor ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+*~
+
+# ---- local scratch ----
+scratch/
+tmp/
+*.local.md
+
+# ---- handover: a point-in-time copy for sharing, not source ----
+# Everything in here is duplicated from the repo root. Tracking both
+# copies means they drift. Regenerate it when you need to share.
+handover/
+
+# ---- superseded source documents (kept locally for history) ----
+# Status of each is recorded in SYSTEM_DESIGN.md section 2.
+LeadCraft_*.docx
+ALMA AI AGENT*.pdf
+Project-Specs-Latest*.pdf
+V1_SCOPE*.md
+COMPETITOR_ANALYSIS.md
+*.rar
