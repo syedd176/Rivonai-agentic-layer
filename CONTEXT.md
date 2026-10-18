@@ -1,6 +1,7 @@
 # Project Context — Read This First
 
-**Written:** 13 October 2026, as a handover into a fresh session.
+**Written:** 13 October 2026. **Updated:** 19 October 2026 — all three channels
+now connect, send and receive; §3, §4 and §7 rewritten.
 **Purpose:** everything a new session needs before touching anything. Read the
 files in §2 before making changes; they carry the reasoning this file only
 summarises.
@@ -58,10 +59,11 @@ rule on the grounds that "the AI Act doesn't apply."
 
 | File | What it is |
 |---|---|
-| [`docs/META_APP_SETUP.md`](https://github.com/syedd176/rivon-dashboard/blob/main/docs/META_APP_SETUP.md) | **The Meta app process, researched from Meta's docs.** Claims labelled Confirmed / Likely / Check |
-| `src/components/WhatsAppConnect.tsx` | Embedded Signup popup flow — the ManyChat-style connect |
-| `src/app/api/oauth/whatsapp/exchange/route.ts` | Server-side token exchange, four calls to Meta |
-| `src/lib/channels.ts` | Channel model and mock data |
+| [`docs/CHANNEL_SETUP_RECORD.md`](https://github.com/syedd176/rivon-dashboard/blob/main/docs/CHANNEL_SETUP_RECORD.md) | **Read this before touching any channel.** Every Meta setting, every environment variable, the database shape, the traps, the known gaps |
+| [`docs/META_APP_SETUP.md`](https://github.com/syedd176/rivon-dashboard/blob/main/docs/META_APP_SETUP.md) | The *plan*, written before the build. Superseded where the two disagree |
+| `src/app/api/webhooks/whatsapp/route.ts` | One endpoint for all three channels; routes on `body.object` |
+| `src/lib/channels-store.ts` | Both channel tables and credential lookup |
+| `src/app/api/oauth/*/` | Four connect flows — WhatsApp, Instagram ×2, Messenger |
 
 ---
 
@@ -71,10 +73,10 @@ rule on the grounds that "the AI Act doesn't apply."
 
 | Repo | URL | State |
 |---|---|---|
-| `Rivonai-agentic-layer` | github.com/syedd176/Rivonai-agentic-layer | Docs and research only. 1 commit. **Public** |
-| `rivon-dashboard` | github.com/syedd176/rivon-dashboard | Next.js app, 5 commits. **Public** |
+| `Rivonai-agentic-layer` | github.com/syedd176/Rivonai-agentic-layer | Docs and research only. **Public** |
+| `rivon-dashboard` | github.com/syedd176/rivon-dashboard | Next.js app, three channels live. **Public** |
 
-Live: **https://rivon-dashboard.vercel.app/channels**
+Live: **https://rivon-dashboard.vercel.app/channels** and `/inbox`
 
 ### Accounts and tooling
 
@@ -83,38 +85,68 @@ Live: **https://rivon-dashboard.vercel.app/channels**
 | GitHub | `syedd176` active. Commits as `syedd176 <syedkarawan@gmail.com>` |
 | Vercel | Authenticated, dashboard deployed |
 | AWS | Profile `rivon`, IAM user `hussnain-dev-rivon`, account `640012952997`, region `ap-southeast-2` |
-| Meta app | Created, named **Rivon**, App ID `2208094983924664`. **Unpublished** |
+| Meta app | **Rivon**, App ID `2208094983924664`. **Published.** Business portfolio: Aylestone Taxis Uk |
+| Neon Postgres | Live. Channels, inbound messages and statuses all persisted |
 
-🔴 **Unresolved security issue.** The AWS access key `AKIAZKA56UWSXVSG3PDL` was
-pasted into chat with its secret visible, three times. The IAM user holds
-**`AdministratorAccess`**. The key has not been rotated. Deactivate it, delete
-it, create a new one, re-run `aws configure --profile rivon`, and narrow the
-policy to `AmazonS3FullAccess`.
+🔴 **Unresolved security issues, all three declined or deferred by the user.**
+
+1. AWS key `AKIAZKA56UWSXVSG3PDL` was pasted in chat with its secret, three
+   times. The IAM user holds **`AdministratorAccess`**. Not rotated. Deactivate,
+   delete, recreate, re-run `aws configure --profile rivon`, narrow to
+   `AmazonS3FullAccess`.
+2. `META_APP_SECRET` was pasted in chat and is still in use.
+3. Two Facebook **Page access tokens** and an Instagram test-user token were
+   pasted in chat. The Page tokens can send messages as Aylestone until
+   revoked — bin icon on Messenger API Setup. The database holds its own token
+   from OAuth, so revoking costs nothing.
 
 ### What is built
 
-**Channels page** — four rows (WhatsApp, Instagram, Messenger, web widget),
-three states each: connected, **needs attention**, not connected. The middle one
-matters most: a dead token means the tenant silently stops receiving leads.
+**All three channels connect, receive and reply.** Verified end to end on real
+accounts, not mocks.
 
-**WhatsApp Embedded Signup** — the real Meta flow, same as ManyChat. The owner
-sees Meta's eight-screen popup. Two things come back from two places in no
-guaranteed order: an exchangeable `code` from the `FB.login` callback (expires
-in **30 seconds**) and `waba_id` + `phone_number_id` from a window message.
-Both are needed, so the payload is held in a ref until the code arrives.
+| Channel | Receive | Reply |
+|---|---|---|
+| WhatsApp | ✅ | ✅ |
+| Instagram DMs | ✅ | ✅ |
+| Instagram comments | ✅ | ✅ |
+| Facebook Messenger | ✅ | ✅ |
 
-Server side does four calls: exchange code → business token, register the
-number for Cloud API, subscribe to webhooks on the WABA, read the display
-number back. The app secret never leaves the server.
+**One webhook** at `/api/webhooks/whatsapp` serves all three, routing on
+`body.object`. Every parser normalises to one `NormalisedMessage`, so one inbox
+and one send path cover everything. A fourth channel is a start route, a
+callback and a parser.
 
-**Not built:** everything else. No backend, no database, no agent. Channel data
-is mocked in `src/lib/channels.ts`.
+**Four connect flows:** WhatsApp Embedded Signup, Instagram Login (primary),
+Instagram via Facebook Login (alternative), and Messenger via Facebook Login
+for Business.
+
+**Persisted in Neon Postgres** — channels, tokens, inbound messages, delivery
+statuses. A daily cron refreshes 60-day Instagram tokens.
+
+**Not built:** the agent. Everything between "message stored" and "reply sent"
+is a human typing in `/inbox`. That is what the Human Agent permission was
+submitted on, and it is honest today. Also no tenant resolution — the
+`providerPhoneNumberId` → `tenant_id` lookup is still a TODO, and getting it
+wrong sends one business's customers to another's agent.
+
+⚠️ **Access tokens are stored in plain text.** Fine for our own accounts; must
+be encrypted before a second tenant's credentials live in that table.
+
+⚠️ **Facebook Page comments are silently dropped.** The parser matches
+Instagram's `field: "comments"`; Pages send `field: "feed"`. The webhook
+arrives, matches nothing, and is discarded with no log.
 
 ---
 
-## 4. The Meta app — where it is blocked
+## 4. The Meta app — where it stands
 
-Created as **Rivon**, App ID `2208094983924664`, currently unpublished.
+**Rivon**, App ID `2208094983924664`, published, under the Aylestone Taxis Uk
+business portfolio.
+
+Full configuration detail is in
+[`docs/CHANNEL_SETUP_RECORD.md`](https://github.com/syedd176/rivon-dashboard/blob/main/docs/CHANNEL_SETUP_RECORD.md).
+This is the summary.
 
 ### The structure, because it confuses people
 
@@ -123,34 +155,29 @@ through it.** A business owner clicking Connect is authorising *our* app to
 reach *their* WhatsApp account. They never create an app. Same as ManyChat,
 Twilio, Zapier.
 
-### Remaining steps
+### Steps, as at 19 October
 
 | # | Step | State |
 |---|---|---|
-| 1 | Create app with the WhatsApp use case | ✅ Done |
-| 2 | App icon, Privacy Policy URL, Category | ⚠️ **Blocking submission.** Category: pick "Business and pages" |
-| 3 | **Become a Tech Provider** | ❌ Not started. **This gates App Review itself** — the dashboard says so explicitly. Includes access verification |
-| 4 | Business Verification | ❌ Not started. Days–weeks |
-| 5 | App Review for `whatsapp_business_management` + `whatsapp_business_messaging` | ❌ Not started. Weeks |
-| 6 | Login for Business **configuration** with the WhatsApp Embedded Signup variation | ❌ **This was the live task when the session ended** |
-| 7 | Allowlist domains in Client OAuth settings | ❌ Not started |
-| 8 | Add teammates as app roles | ❌ Not started — but see below |
+| 1 | App with three use cases (WhatsApp, Instagram Login, Messenger) | ✅ |
+| 2 | Icon, Privacy Policy, Data Deletion URL, Category | ✅ |
+| 3 | Tech Provider status | ✅ |
+| 4 | Business Verification | ✅ |
+| 5 | App Review — WhatsApp (`whatsapp_business_messaging` + `_management`) | ✅ **Approved first time** |
+| 6 | Login for Business configurations — WhatsApp *and* Messenger | ✅ Both created |
+| 7 | Redirect URIs allowlisted, Strict Mode on | ✅ Three URIs |
+| 8 | Webhooks configured and **fields subscribed** on all three objects | ✅ |
+| 9 | Real second account added as Tester | ✅ Haseeb Naqvi |
+| 10 | App Review — Instagram ×3 + Messenger ×4 + Human Agent | ⏳ **Filled in, awaiting Meta's API-call counter** |
 
-**Step 6 was in progress.** Facebook Login for Business → Configurations →
-Create configuration → name it → **login variation: WhatsApp Embedded Signup**
-→ User access token → permissions `whatsapp_business_management` and
-`whatsapp_business_messaging` → Create → copy the Configuration ID into
-`NEXT_PUBLIC_META_CONFIG_ID`.
+**Step 10 is the only open one.** Descriptions, screencasts, reproduction
+instructions and the compliance boxes are all complete. Three cards still show
+a grey tick for "required API test calls" — the calls were made and returned
+200, but Meta's counter takes up to 24 hours. Check Review → App Review, and
+submit once they go green.
 
-⚠️ **Embedded Signup v2 was deprecated 15 October 2026.** Make sure the
-configuration is v4.
-
-### The unblock nobody should miss
-
-**Add the four teammates as app roles.** In development mode, permissions work
-for anyone with an admin/developer/tester role on the app — so the whole
-Embedded Signup flow is testable **today**, against your own WhatsApp numbers,
-without waiting weeks for review.
+⚠️ **Do not submit with a grey tick.** Meta rejects on unmet requirements and
+it costs a round trip.
 
 ### Two constraints that bite later
 
@@ -163,16 +190,20 @@ without waiting weeks for review.
   Embedded Signup popup does not cover that step. The channels UI needs to
   detect and explain that state.
 
-### Vercel environment variables, still unset
+### Vercel environment variables
 
-| Name | Visibility |
-|---|---|
-| `NEXT_PUBLIC_META_APP_ID` | 🌐 Public — `2208094983924664` |
-| `NEXT_PUBLIC_META_CONFIG_ID` | 🌐 Public — from step 6 |
-| `META_APP_ID` | 🔒 Server |
-| `META_APP_SECRET` | 🔒 **Server only, never `NEXT_PUBLIC_`** |
-| `WHATSAPP_REGISTER_PIN` | 🔒 Server — six digits you invent |
-| `APP_URL` | 🔒 `https://rivon-dashboard.vercel.app` |
+All 14 are set in Production. `CHANNEL_SETUP_RECORD.md` §3 lists each one and
+where its value came from. The ones that cause trouble:
+
+- **`INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET`** are *not* the Meta app's.
+  Instagram Login has its own pair, on the "API setup with Instagram login"
+  page. Copy the secret with the **button** — the UI truncates the display, and
+  a 19-character secret fails in ways that look like something else entirely.
+- **`MESSENGER_CONFIG_ID`** — Facebook Login for Business rejects a plain
+  `scope` list. Without a config id the dialog refuses with "this app needs at
+  least one supported permission".
+- ⚠️ Vercel applies variables **at build time**. Adding one without
+  redeploying changes nothing.
 
 ---
 
@@ -218,34 +249,36 @@ knowingly, flagged here so nobody treats the REST layer as permanent.
 
 ## 7. What to do next
 
-In cost-to-answer order, from `TEAM_SPLIT.md` §5:
+Channel plumbing is done. What remains is the product.
 
 | # | Task | Effort | Owner |
 |---|---|---|---|
-| 0 | 🔴 **Rotate the exposed AWS key** | 5 min | Whoever reads this first |
-| 1 | Finish the Login for Business configuration (§4 step 6) | 15 min | Ali |
-| 2 | Add teammates as Meta app roles — unblocks testing without review | 10 min | Ali |
-| 3 | Start Tech Provider + Business Verification — longest lead time | Hours, then weeks of waiting | Ali |
-| 4 | Verify the messaging service-window pricing change | 1 hour | Ali |
-| 5 | **The 25–40 customer calls** | 2 days | **All four**, one trade each |
-| 6 | Permission emails to ServiceM8 and Housecall Pro | 1 hour | Maryam |
-| 7 | **Start the pre-priced library** | Weeks | Noman · Tehman |
-| 8 | Agree the `requirements.extracted` payload | Half a day | Contract owner + all four |
+| 0 | 🔴 **Rotate the exposed AWS key and the Page tokens** | 10 min | Whoever reads this first |
+| 1 | Submit App Review once the API counters go green (§4 step 10) | 10 min | Ali |
+| 2 | **The 25–40 customer calls** | 2 days | **All four**, one trade each |
+| 3 | Agree the `requirements.extracted` payload | Half a day | Contract owner + all four |
+| 4 | **Start the pre-priced library** | Weeks | Noman · Tehman |
+| 5 | Encrypt stored access tokens before a second tenant exists | Half a day | Noman · Tehman |
+| 6 | Tenant resolution — `providerPhoneNumberId` → `tenant_id` | A day | Noman · Tehman |
+| 7 | The agent itself — see `AGENTIC_LAYER.md` build order | Weeks | Ali · Maryam |
+| 8 | Facebook Page comments (`field: "feed"`), + 2 permissions | A day | Ali · Maryam |
+| 9 | Permission emails to ServiceM8 and Housecall Pro | 1 hour | Maryam |
 
-**Task 5 can invalidate the product thesis.** Whether customers message or
-phone is unresolved, and every published figure on both sides is vendor
-marketing.
+**Task 2 can invalidate the product thesis** and is now the long pole. The
+channels no longer block anything.
 
-### The recommendation that keeps being deferred
+Whether customers message or phone is still unresolved, and every published
+figure on both sides is vendor marketing.
 
-**Build the web widget.** It needs no Meta app, no App Review, no Business
-Verification, no payment method — and it exercises the *identical* inbound
-path: webhook → normalise → classify → extract → reply. Only the adapter
-differs.
+### The web widget is no longer the critical path
 
-It is how Team A tests the whole agent while Meta takes weeks. The design calls
-for exactly this in `SYSTEM_DESIGN.md` §5.1: *"the whole system must be testable
-and demoable with no live WhatsApp connection."*
+It was the recommended unblock while Meta review loomed. Three live channels
+now exercise the same inbound path — webhook → normalise → store — so Team A
+can build the agent against real messages today. The widget remains worth
+building as a fourth adapter, but it unblocks nothing.
+
+What Team A actually needs now is the gap between "message stored" and "reply
+sent". `AGENTIC_LAYER.md` has the build order; metering is step one.
 
 ---
 
